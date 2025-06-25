@@ -1,5 +1,5 @@
 use druid::{
-    text::{TextAlignment, FontFamily}, widget::{Flex, Label, List, Scroll, TextBox, Controller, RawLabel, Container, SizedBox}, commands, AppDelegate, AppLauncher, Command, Data, DelegateCtx, Env, FileDialogOptions, FileInfo, FileSpec, Handled, Lens, LocalizedString, Menu, MenuItem, Selector, Target, Widget, WidgetExt, WindowDesc, FontDescriptor, UpdateCtx, theme, Color, EventCtx, Event, LifeCycleCtx, LifeCycle, LayoutCtx, BoxConstraints, Size, PaintCtx, RenderContext, Rect, Point, WidgetPod
+    text::{TextAlignment, FontFamily}, widget::{Flex, Label, List, Scroll, TextBox, Controller, RawLabel, Container, SizedBox}, commands, AppDelegate, AppLauncher, Command, Data, DelegateCtx, Env, FileDialogOptions, FileInfo, FileSpec, Handled, Lens, LocalizedString, Menu, MenuItem, Selector, Target, Widget, WidgetExt, WindowDesc, FontDescriptor, UpdateCtx, theme, Color, EventCtx, Event, LifeCycleCtx, LifeCycle, LayoutCtx, BoxConstraints, Size, PaintCtx, RenderContext, Rect, Point, WidgetPod, WidgetId
 };
 use std::fs;
 use std::sync::Arc;
@@ -80,6 +80,8 @@ const OPEN_FILE_SELECTOR: Selector = Selector::new("file.file-open");
 const SAVE_FILE_SELECTOR: Selector = Selector::new("file.file-save");
 
 fn build_ui() -> impl Widget<AppState> {
+    let code_box_id = WidgetId::next();
+
     let line_numbers = List::new(|| {
         Label::dynamic(|i: &usize, _| format!("{:>4}", i + 1))
             .with_font(FontDescriptor::new(FontFamily::MONOSPACE))
@@ -94,7 +96,8 @@ fn build_ui() -> impl Widget<AppState> {
         .with_placeholder("")
         .with_font(FontDescriptor::new(FontFamily::MONOSPACE))
         .lens(AppState::content)
-        .controller(CodeAreaCallback());
+        .controller(CodeAreaCallback())
+        .with_id(code_box_id);
 
     let editor = editor
         .env_scope(|env, _| {
@@ -110,11 +113,16 @@ fn build_ui() -> impl Widget<AppState> {
                 .expand_height()
         )
         .with_flex_child(
-            SizedBox::empty().background(Color::grey8(50))
+            SizedBox::empty()
+                .background(Color::grey8(50))
+                .on_click(move |ctx: &mut EventCtx, _data: &mut AppState, _env: &Env| {
+                    ctx.set_focus(code_box_id);
+                })
                 .expand(),
             1.0
         )
         .expand();
+
     Stack::new()
         .with_child(background)
         .with_child(
