@@ -4,6 +4,13 @@ use druid::{
 use std::fs;
 use std::sync::Arc;
 use ropey::Rope;
+use tokio;
+use once_cell::sync::Lazy;
+use tokio::runtime::Runtime;
+
+static TOKIO_RT: Lazy<Runtime> = Lazy::new(|| {
+    Runtime::new().expect("Failed to create Tokio runtime")
+});
 
 #[derive(Clone, Data, Lens)]
 struct AppState {
@@ -13,7 +20,7 @@ struct AppState {
     cursor_pos: usize,
     #[data(ignore)]
     rope: Rope,
-    num_lines: Arc<Vec<usize>>,
+    num_lines: Arc<Vec<usize>>
 }
 
 impl Default for AppState {
@@ -77,7 +84,8 @@ impl AppState {
 }
 
 const OPEN_FILE_SELECTOR: Selector = Selector::new("file.file-open");
-const SAVE_FILE_SELECTOR: Selector = Selector::new("file.file-save");
+const SAVE_FILE_SELECTOR: Selector = Selector::new("file.file-open");
+const OPENED_FILE_SELECTOR: Selector<(String, String)> = Selector::new("file.file-opened");
 
 fn build_ui() -> impl Widget<AppState> {
     let code_box_id = WidgetId::next();
@@ -235,19 +243,38 @@ impl AppDelegate<AppState> for Delegate {
         }
 
         if let Some(file_info) = cmd.get::<FileInfo>(commands::OPEN_FILE) {
-            println!("[*] File opened: {:?}", file_info.path());
+            let path_string = file_info.path().to_string_lossy().to_string();
+            let path_clone = path_string.clone();
+            println!("[*] File Opening: {:?}", path_string);
 
-            match data.open_file(&file_info.path().to_string_lossy()) {
-                Ok(()) => {
-                    println!("opened");
-                },
-                Err(_) => {
-                    println!("error");
+            let sink = ctx.get_external_handle();
+            TOKIO_RT.spawn_blocking(move || {
+                match fs::read_to_string(&path_clone) {
+                    Ok(content) => {
+                        sink.submit_command(
+                            OPENED_FILE_SELECTOR,
+                            (path_string, content),
+                            Target::Auto
+                        ).expect("failed to send content to UI thread");
+                    }
+                    Err(err) => {
+                        eprintln!("[error] reading file: {err}");
+                    }
                 }
-            }
+            });
             
             return Handled::Yes;
         }
+
+        if let Some((path, content)) = cmd.get(OPENED_FILE_SELECTOR) {
+            data.rope = Rope::from_str(content);
+            data.sync_from_rope();
+            data.sync_lines_from_rope();
+            data.file_path = Some(path.clone());
+            data.is_modified = false;
+            return Handled::Yes;
+        }
+
 
         if let Some(file_info) = cmd.get::<FileInfo>(commands::SAVE_FILE_AS) {
             println!("[*] File saved to: {:?}", file_info.path());
